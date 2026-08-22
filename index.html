@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Meine Wissenszentrale v0.3.05</title>
+<title>Meine Wissenszentrale v0.3.06</title>
 <style>
 :root{--bg:#0f172a;--p:#111827;--p2:#1f2937;--t:#f8fafc;--m:#94a3b8;--a:#38bdf8;--g:#22c55e;--r:#ef4444;--b:rgba(255,255,255,.09)}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1120,var(--bg));color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
@@ -23,7 +23,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <body>
 <main class="app">
 <section class="card">
-<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.05</span></div>
+<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.06</span></div>
 <div class="status"><span class="pill" id="online">…</span><span class="pill">Lokale Speicherung</span><span class="pill" id="speechsupport">Mikrofon wird geprüft …</span></div>
 <div class="stats"><div class="stat"><strong id="all">0</strong><span>Einträge</span></div><div class="stat"><strong id="fav">0</strong><span>Favoriten</span></div><div class="stat"><strong id="catcount">0</strong><span>Kategorien</span></div></div>
 </section>
@@ -32,12 +32,8 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <input id="search" type="search" placeholder="Wissen durchsuchen …">
 <select id="filter"><option value="">Alle Kategorien</option></select>
 </div>
-<div class="hint">Suche v0.3.05: bewährter Kategorienfilter mit neu aufgebauter Unschärfe.</div>
-<div class="card" style="padding:12px;margin-top:10px">
-  <strong>Diagnose v0.3.05</strong>
-  <div class="hint" id="diagSummary">Noch keine Sucheingabe.</div>
-  <div class="hint" id="diagEntries" style="margin-top:8px;white-space:pre-wrap"></div>
-</div>
+<div class="hint">Suche v0.3.06: Leerzeichen und Bindestriche werden ignoriert; kleine Tippfehler sind erlaubt, Ziffern müssen exakt passen.</div>
+
 
 
 <section class="grid">
@@ -72,71 +68,52 @@ function norm(s=""){return String(s).toLowerCase().normalize("NFD").replace(/[\u
 function words(s=""){return String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g," ").trim().split(/\s+/).filter(Boolean)}
 function lev(a,b){const m=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)m[i][0]=i;for(let j=0;j<=b.length;j++)m[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return m[a.length][b.length]}
 function close(a,b){if(!a||!b)return false;if(a.includes(b)||b.includes(a))return true;const n=Math.max(a.length,b.length);return lev(a,b)<=(n<=4?1:n<=8?2:3)}
+function splitAlphaNumeric(s=""){
+ const n=norm(s);
+ const letters=(n.match(/[a-z]+/g)||[]).join("");
+ const digits=(n.match(/[0-9]+/g)||[]).join("");
+ return {raw:n,letters,digits};
+}
+
 function fuzzy(q,e){
  if(!q.trim()) return true;
 
  const fields=[e.title,e.category,e.source,e.link,e.content,...(e.tags||[])];
- const compactQuery=norm(q);
+ const query=splitAlphaNumeric(q);
 
- // 1) Exact/normalized substring:
- // Test 1, Test-1 and Test1 all become test1.
- if(fields.some(v=>norm(v||"").includes(compactQuery))) return true;
+ for(const value of fields){
+   const candidate=splitAlphaNumeric(value||"");
+   if(!candidate.raw) continue;
 
- // 2) Typo tolerance word-by-word.
- const queryWords=words(q);
- const fieldWords=words(fields.join(" "));
- if(queryWords.length && queryWords.every(qw=>fieldWords.some(fw=>close(qw,fw)))) return true;
+   // Exakter normalisierter Teiltreffer:
+   // Test 1 / Test-1 / Test1 werden identisch behandelt.
+   if(candidate.raw.includes(query.raw)) return true;
 
- // 3) Also compare adjacent stored words as one token.
- // This covers "Test 1" stored as two words but searched as "Tes1".
- const candidates=[...fieldWords];
- for(let i=0;i<fieldWords.length-1;i++) candidates.push(fieldWords[i]+fieldWords[i+1]);
+   // Enthält die Suche Ziffern, müssen diese exakt übereinstimmen.
+   // Dadurch trifft "Tes1" auf "Test1", aber nicht auf Test3/Test4/Test5.
+   if(query.digits){
+     if(candidate.digits !== query.digits) continue;
+     if(query.letters && candidate.letters && close(query.letters,candidate.letters)) return true;
+     continue;
+   }
 
- return candidates.some(c=>close(compactQuery,norm(c)));
+   // Ohne Ziffern normale Tippfehlertoleranz auf Wortebene.
+   const qw=words(q);
+   const fw=words(value||"");
+   if(qw.length && qw.every(x=>fw.some(y=>close(x,y)))) return true;
+ }
+
+ return false;
 }
 function saveStore(){localStorage.setItem(STORE_KEY,JSON.stringify(entries))}
 function cats(){return [...new Set(entries.map(e=>e.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b))}
 function refreshCats(){const c=cats(),sel=$("filter").value;$("filter").innerHTML='<option value="">Alle Kategorien</option>'+c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(c.includes(sel))$("filter").value=sel;$("catlist").innerHTML=c.map(x=>`<option value="${esc(x)}"></option>`).join("");$("catcount").textContent=c.length}
 function render(){
- const q=$("search").value;
- const cat=$("filter").value;
-
- const details=entries.map(e=>{
-   const fuzzyResult=fuzzy(q,e);
-   const categoryResult=(!cat||e.category===cat);
-   return {
-     title:e.title||"Ohne Titel",
-     category:e.category||"",
-     fuzzy:fuzzyResult,
-     categoryMatch:categoryResult,
-     final:fuzzyResult&&categoryResult&&(!favOnly||e.favorite)
-   };
- });
-
+ const q=$("search").value,cat=$("filter").value;
  const list=entries.filter(e=>fuzzy(q,e)&&(!cat||e.category===cat)&&(!favOnly||e.favorite)).sort((a,b)=>b.updatedAt-a.updatedAt);
 
  $("all").textContent=entries.length;
  $("fav").textContent=entries.filter(e=>e.favorite).length;
-
- const fuzzyCount=details.filter(d=>d.fuzzy).length;
- const categoryCount=details.filter(d=>d.categoryMatch).length;
- const finalCount=details.filter(d=>d.final).length;
-
- $("diagSummary").textContent =
-   "Suchbegriff: " + (q||"(leer)") +
-   " | Kategorie-Wert: " + (cat==="" ? "(leer = Alle Kategorien)" : cat) +
-   " | Fuzzy-Treffer: " + fuzzyCount +
-   " | Kategorie-Treffer: " + categoryCount +
-   " | Endtreffer: " + finalCount;
-
- $("diagEntries").textContent = details.map(d=>
-   d.title +
-   " | Kat: " + (d.category||"(leer)") +
-   " | fuzzy=" + d.fuzzy +
-   " | kat=" + d.categoryMatch +
-   " | final=" + d.final
- ).join("\n");
-
  $("entries").innerHTML=list.length?list.map(e=>`<article class="entry"><h3>${esc(e.title||"Ohne Titel")}</h3><span class="badge">${esc(e.category||"Ohne Kategorie")}</span>${e.content?`<p>${esc(e.content)}</p>`:""}${e.link?`<p><a href="${esc(e.link)}" target="_blank">Quelle öffnen</a></p>`:""}${(e.tags||[]).length?`<div class="tags">${e.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}<div class="meta">${esc(e.source||"")} · ${new Date(e.updatedAt).toLocaleDateString("de-DE")}</div><div class="actions"><button class="secondary" onclick="editEntry('${e.id}')">Bearbeiten</button><button class="secondary" onclick="toggleFav('${e.id}')">${e.favorite?"★ entfernen":"☆ Favorit"}</button><button class="danger" onclick="delEntry('${e.id}')">Löschen</button></div></article>`).join(""):'<p class="hint">Noch nichts Passendes gefunden.</p>';
  refreshCats();
 }
