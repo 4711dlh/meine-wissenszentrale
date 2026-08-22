@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Meine Wissenszentrale v0.3.03</title>
+<title>Meine Wissenszentrale v0.3.04</title>
 <style>
 :root{--bg:#0f172a;--p:#111827;--p2:#1f2937;--t:#f8fafc;--m:#94a3b8;--a:#38bdf8;--g:#22c55e;--r:#ef4444;--b:rgba(255,255,255,.09)}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1120,var(--bg));color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
@@ -23,7 +23,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <body>
 <main class="app">
 <section class="card">
-<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.03</span></div>
+<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.04</span></div>
 <div class="status"><span class="pill" id="online">…</span><span class="pill">Lokale Speicherung</span><span class="pill" id="speechsupport">Mikrofon wird geprüft …</span></div>
 <div class="stats"><div class="stat"><strong id="all">0</strong><span>Einträge</span></div><div class="stat"><strong id="fav">0</strong><span>Favoriten</span></div><div class="stat"><strong id="catcount">0</strong><span>Kategorien</span></div></div>
 </section>
@@ -32,11 +32,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <input id="search" type="search" placeholder="Wissen durchsuchen …">
 <select id="filter"><option value="">Alle Kategorien</option></select>
 </div>
-<div class="hint">Die Suche toleriert Leerzeichen, Bindestriche, Groß-/Kleinschreibung und kleine Tippfehler. Bei „Alle Kategorien“ wird ohne Kategorienfilter über den gesamten Datenbestand gesucht.</div>
-<div class="card" style="padding:12px;margin-top:10px">
-  <strong>Diagnose v0.3.03</strong>
-  <div class="hint" id="diag">Warte auf Sucheingabe …</div>
-</div>
+<div class="hint">Suche v0.3.04: bewährter Kategorienfilter mit neu aufgebauter Unschärfe.</div>
 
 <section class="grid">
 <section class="card" id="formcard">
@@ -71,84 +67,47 @@ function words(s=""){return String(s).toLowerCase().normalize("NFD").replace(/[\
 function lev(a,b){const m=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)m[i][0]=i;for(let j=0;j<=b.length;j++)m[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return m[a.length][b.length]}
 function close(a,b){if(!a||!b)return false;if(a.includes(b)||b.includes(a))return true;const n=Math.max(a.length,b.length);return lev(a,b)<=(n<=4?1:n<=8?2:3)}
 function fuzzy(q,e){
- if(!q.trim())return true;
- const hay=[e.title,e.category,e.source,e.link,e.content,...(e.tags||[])].join(" ");
- const nq=norm(q),nh=norm(hay);
- if(nh.includes(nq))return true;
+ if(!q.trim()) return true;
+
  const fields=[e.title,e.category,e.source,e.link,e.content,...(e.tags||[])];
- if(fields.some(v=>{const nv=norm(v||"");return nv&&(nv.includes(nq)||close(nv,nq));}))return true;
- const qw=words(q),hw=words(hay);
- if(qw.length&&qw.every(x=>hw.some(y=>close(x,y))))return true;
- const parts=[];for(let i=0;i<hw.length;i++){parts.push(hw[i]);if(i<hw.length-1)parts.push(hw[i]+hw[i+1])}
- return parts.some(p=>close(nq,norm(p)));
+ const compactQuery=norm(q);
+
+ // 1) Exact/normalized substring:
+ // Test 1, Test-1 and Test1 all become test1.
+ if(fields.some(v=>norm(v||"").includes(compactQuery))) return true;
+
+ // 2) Typo tolerance word-by-word.
+ const queryWords=words(q);
+ const fieldWords=words(fields.join(" "));
+ if(queryWords.length && queryWords.every(qw=>fieldWords.some(fw=>close(qw,fw)))) return true;
+
+ // 3) Also compare adjacent stored words as one token.
+ // This covers "Test 1" stored as two words but searched as "Tes1".
+ const candidates=[...fieldWords];
+ for(let i=0;i<fieldWords.length-1;i++) candidates.push(fieldWords[i]+fieldWords[i+1]);
+
+ return candidates.some(c=>close(compactQuery,norm(c)));
 }
 function saveStore(){localStorage.setItem(STORE_KEY,JSON.stringify(entries))}
 function cats(){return [...new Set(entries.map(e=>e.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b))}
-let activeCategory="__all__";
-let knownCategories=[];
-
-function rebuildCategoryControls(){
- knownCategories=cats();
-
- const previous=activeCategory;
- $("filter").innerHTML='<option value="__all__">Alle Kategorien</option>'+
-   knownCategories.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
-
- activeCategory = knownCategories.includes(previous) ? previous : "__all__";
- $("filter").value=activeCategory;
-
- $("catlist").innerHTML=knownCategories.map(x=>`<option value="${esc(x)}"></option>`).join("");
- $("catcount").textContent=knownCategories.length;
-}
-
-function renderEntries(){
- const q=$("search").value.trim();
-
- // 1. Suche läuft IMMER zuerst über den gesamten Datenbestand
- const beforeSearchCount=entries.length;
- let list=entries.filter(e=>fuzzy(q,e));
- const afterSearchCount=list.length;
-
- // 2. Kategorie wird danach separat angewendet
- const categoryBefore=activeCategory;
- if(activeCategory!=="__all__"){
-   list=list.filter(e=>String(e.category||"")===activeCategory);
- }
- const afterCategoryCount=list.length;
-
- // 3. Favoritenfilter separat
- if(favOnly){
-   list=list.filter(e=>e.favorite);
- }
-
- list.sort((a,b)=>b.updatedAt-a.updatedAt);
-
- $("diag").textContent =
-   "Suche: " + (q||"(leer)") +
-   " | Kategorie intern: " + activeCategory +
-   " | Datensätze gesamt: " + beforeSearchCount +
-   " | Treffer nach Fuzzy: " + afterSearchCount +
-   " | Treffer nach Kategorie: " + afterCategoryCount;
-
- $("all").textContent=entries.length;
- $("fav").textContent=entries.filter(e=>e.favorite).length;
- $("entries").innerHTML=list.length?list.map(e=>`<article class="entry"><h3>${esc(e.title||"Ohne Titel")}</h3><span class="badge">${esc(e.category||"Ohne Kategorie")}</span>${e.content?`<p>${esc(e.content)}</p>`:""}${e.link?`<p><a href="${esc(e.link)}" target="_blank">Quelle öffnen</a></p>`:""}${(e.tags||[]).length?`<div class="tags">${e.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}<div class="meta">${esc(e.source||"")} · ${new Date(e.updatedAt).toLocaleDateString("de-DE")}</div><div class="actions"><button class="secondary" onclick="editEntry('${e.id}')">Bearbeiten</button><button class="secondary" onclick="toggleFav('${e.id}')">${e.favorite?"★ entfernen":"☆ Favorit"}</button><button class="danger" onclick="delEntry('${e.id}')">Löschen</button></div></article>`).join(""):'<p class="hint">Noch nichts Passendes gefunden.</p>';
-}
-
+function refreshCats(){const c=cats(),sel=$("filter").value;$("filter").innerHTML='<option value="">Alle Kategorien</option>'+c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(c.includes(sel))$("filter").value=sel;$("catlist").innerHTML=c.map(x=>`<option value="${esc(x)}"></option>`).join("");$("catcount").textContent=c.length}
 function render(){
- rebuildCategoryControls();
- renderEntries();
+ const q=$("search").value,cat=$("filter").value;
+ const list=entries.filter(e=>fuzzy(q,e)&&(!cat||e.category===cat)&&(!favOnly||e.favorite)).sort((a,b)=>b.updatedAt-a.updatedAt);
+ $("all").textContent=entries.length;$("fav").textContent=entries.filter(e=>e.favorite).length;
+ $("entries").innerHTML=list.length?list.map(e=>`<article class="entry"><h3>${esc(e.title||"Ohne Titel")}</h3><span class="badge">${esc(e.category||"Ohne Kategorie")}</span>${e.content?`<p>${esc(e.content)}</p>`:""}${e.link?`<p><a href="${esc(e.link)}" target="_blank">Quelle öffnen</a></p>`:""}${(e.tags||[]).length?`<div class="tags">${e.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}<div class="meta">${esc(e.source||"")} · ${new Date(e.updatedAt).toLocaleDateString("de-DE")}</div><div class="actions"><button class="secondary" onclick="editEntry('${e.id}')">Bearbeiten</button><button class="secondary" onclick="toggleFav('${e.id}')">${e.favorite?"★ entfernen":"☆ Favorit"}</button><button class="danger" onclick="delEntry('${e.id}')">Löschen</button></div></article>`).join(""):'<p class="hint">Noch nichts Passendes gefunden.</p>';
+ refreshCats();
 }
 function resetForm(){["id","title","category","link","content","tags"].forEach(x=>$(x).value="");$("source").value="Eigene Notiz";$("save").textContent="Speichern";$("speechstatus").textContent=""}
 function saveEntry(){
  if(!$("title").value.trim()&&!$("content").value.trim()){alert("Bitte Titel oder Information eintragen.");return}
  const id=$("id").value,old=id?entries.find(e=>e.id===id):null;
  const e={id:id||(crypto.randomUUID?crypto.randomUUID():String(Date.now())),title:$("title").value.trim(),category:$("category").value.trim(),source:$("source").value,link:$("link").value.trim(),content:$("content").value.trim(),tags:$("tags").value.split(",").map(x=>x.trim()).filter(Boolean),favorite:old?.favorite||false,createdAt:old?.createdAt||Date.now(),updatedAt:Date.now()};
- entries=old?entries.map(x=>x.id===id?e:x):[...entries,e];saveStore();resetForm();rebuildCategoryControls();renderEntries();
+ entries=old?entries.map(x=>x.id===id?e:x):[...entries,e];saveStore();resetForm();render();
 }
 window.editEntry=id=>{const e=entries.find(x=>x.id===id);if(!e)return;$("id").value=e.id;$("title").value=e.title||"";$("category").value=e.category||"";$("source").value=e.source||"Eigene Notiz";$("link").value=e.link||"";$("content").value=e.content||"";$("tags").value=(e.tags||[]).join(", ");$("save").textContent="Änderungen speichern";$("formcard").scrollIntoView({behavior:"smooth"})}
-window.toggleFav=id=>{entries=entries.map(e=>e.id===id?{...e,favorite:!e.favorite,updatedAt:Date.now()}:e);saveStore();rebuildCategoryControls();renderEntries()}
-window.delEntry=id=>{if(confirm("Diesen Eintrag wirklich löschen?")){entries=entries.filter(e=>e.id!==id);saveStore();rebuildCategoryControls();renderEntries()}}
+window.toggleFav=id=>{entries=entries.map(e=>e.id===id?{...e,favorite:!e.favorite,updatedAt:Date.now()}:e);saveStore();render()}
+window.delEntry=id=>{if(confirm("Diesen Eintrag wirklich löschen?")){entries=entries.filter(e=>e.id!==id);saveStore();render()}}
 $("online").textContent=navigator.onLine?"Online":"Offline";
 window.addEventListener("online",()=>$("online").textContent="Online");window.addEventListener("offline",()=>$("online").textContent="Offline");
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,listening=false,base="";
@@ -160,9 +119,9 @@ if(SR){
  rec.onend=()=>{listening=false;$("mic").classList.remove("live");$("mic").textContent="🎤 Diktieren";$("speechstatus").textContent="Diktat beendet.";base=$("content").value.trim()};
  $("mic").onclick=()=>{try{listening?rec.stop():rec.start()}catch(e){}};
 }else{$("speechsupport").textContent="Mikrofon nicht unterstützt";$("mic").disabled=true;$("speechstatus").textContent="Dieser Browser unterstützt die eingebaute Spracherkennung nicht."}
-$("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=renderEntries;$("filter").onchange=()=>{activeCategory=$("filter").value||"__all__";renderEntries();};
+$("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=render;$("filter").onchange=render;
 $("export").onclick=()=>{const b=new Blob([JSON.stringify({app:"Meine Wissenszentrale",version:"0.3.0",entries},null,2)],{type:"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="wissenszentrale-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(u)};
-$("import").onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.entries))throw 0;entries=confirm("OK = vorhandene Daten ersetzen.\nAbbrechen = zusätzlich übernehmen.")?d.entries:[...entries,...d.entries];saveStore();rebuildCategoryControls();renderEntries();alert("Backup importiert.")}catch(x){alert("Backup konnte nicht gelesen werden.")}e.target.value=""};
+$("import").onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.entries))throw 0;entries=confirm("OK = vorhandene Daten ersetzen.\nAbbrechen = zusätzlich übernehmen.")?d.entries:[...entries,...d.entries];saveStore();render();alert("Backup importiert.")}catch(x){alert("Backup konnte nicht gelesen werden.")}e.target.value=""};
 if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js").catch(()=>{}));
 render();
 </script>
