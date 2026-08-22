@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Meine Wissenszentrale v0.3.0</title>
+<title>Meine Wissenszentrale v0.3.1</title>
 <style>
 :root{--bg:#0f172a;--p:#111827;--p2:#1f2937;--t:#f8fafc;--m:#94a3b8;--a:#38bdf8;--g:#22c55e;--r:#ef4444;--b:rgba(255,255,255,.09)}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1120,var(--bg));color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
@@ -23,7 +23,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <body>
 <main class="app">
 <section class="card">
-<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.0</span></div>
+<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.1</span></div>
 <div class="status"><span class="pill" id="online">…</span><span class="pill">Lokale Speicherung</span><span class="pill" id="speechsupport">Mikrofon wird geprüft …</span></div>
 <div class="stats"><div class="stat"><strong id="all">0</strong><span>Einträge</span></div><div class="stat"><strong id="fav">0</strong><span>Favoriten</span></div><div class="stat"><strong id="catcount">0</strong><span>Kategorien</span></div></div>
 </section>
@@ -32,7 +32,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <input id="search" type="search" placeholder="Wissen durchsuchen …">
 <select id="filter"><option value="">Alle Kategorien</option></select>
 </div>
-<div class="hint">Die Suche toleriert Leerzeichen, Bindestriche, Groß-/Kleinschreibung und kleine Tippfehler.</div>
+<div class="hint">Die Suche toleriert Leerzeichen, Bindestriche, Groß-/Kleinschreibung und kleine Tippfehler. Alle Kategorien werden gemeinsam durchsucht.</div>
 
 <section class="grid">
 <section class="card" id="formcard">
@@ -71,6 +71,8 @@ function fuzzy(q,e){
  const hay=[e.title,e.category,e.source,e.link,e.content,...(e.tags||[])].join(" ");
  const nq=norm(q),nh=norm(hay);
  if(nh.includes(nq))return true;
+ const fields=[e.title,e.category,e.source,e.link,e.content,...(e.tags||[])];
+ if(fields.some(v=>{const nv=norm(v||"");return nv&&(nv.includes(nq)||close(nv,nq));}))return true;
  const qw=words(q),hw=words(hay);
  if(qw.length&&qw.every(x=>hw.some(y=>close(x,y))))return true;
  const parts=[];for(let i=0;i<hw.length;i++){parts.push(hw[i]);if(i<hw.length-1)parts.push(hw[i]+hw[i+1])}
@@ -78,10 +80,21 @@ function fuzzy(q,e){
 }
 function saveStore(){localStorage.setItem(STORE_KEY,JSON.stringify(entries))}
 function cats(){return [...new Set(entries.map(e=>e.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b))}
-function refreshCats(){const c=cats(),sel=$("filter").value;$("filter").innerHTML='<option value="">Alle Kategorien</option>'+c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(c.includes(sel))$("filter").value=sel;$("catlist").innerHTML=c.map(x=>`<option value="${esc(x)}"></option>`).join("");$("catcount").textContent=c.length}
+let activeCategory="__all__";
+function refreshCats(){
+ const c=cats();
+ $("filter").innerHTML='<option value="__all__">Alle Kategorien</option>'+c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
+ $("filter").value=c.includes(activeCategory)?activeCategory:"__all__";
+ if($("filter").value==="__all__") activeCategory="__all__";
+ $("catlist").innerHTML=c.map(x=>`<option value="${esc(x)}"></option>`).join("");
+ $("catcount").textContent=c.length;
+}
+function categoryMatches(e){
+ return activeCategory==="__all__" || String(e.category||"")===activeCategory;
+}
 function render(){
- const q=$("search").value,cat=$("filter").value;
- const list=entries.filter(e=>fuzzy(q,e)&&(!cat||e.category===cat)&&(!favOnly||e.favorite)).sort((a,b)=>b.updatedAt-a.updatedAt);
+ const q=$("search").value.trim();
+ const list=entries.filter(e=>fuzzy(q,e)&&categoryMatches(e)&&(!favOnly||e.favorite)).sort((a,b)=>b.updatedAt-a.updatedAt);
  $("all").textContent=entries.length;$("fav").textContent=entries.filter(e=>e.favorite).length;
  $("entries").innerHTML=list.length?list.map(e=>`<article class="entry"><h3>${esc(e.title||"Ohne Titel")}</h3><span class="badge">${esc(e.category||"Ohne Kategorie")}</span>${e.content?`<p>${esc(e.content)}</p>`:""}${e.link?`<p><a href="${esc(e.link)}" target="_blank">Quelle öffnen</a></p>`:""}${(e.tags||[]).length?`<div class="tags">${e.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}<div class="meta">${esc(e.source||"")} · ${new Date(e.updatedAt).toLocaleDateString("de-DE")}</div><div class="actions"><button class="secondary" onclick="editEntry('${e.id}')">Bearbeiten</button><button class="secondary" onclick="toggleFav('${e.id}')">${e.favorite?"★ entfernen":"☆ Favorit"}</button><button class="danger" onclick="delEntry('${e.id}')">Löschen</button></div></article>`).join(""):'<p class="hint">Noch nichts Passendes gefunden.</p>';
  refreshCats();
@@ -107,7 +120,7 @@ if(SR){
  rec.onend=()=>{listening=false;$("mic").classList.remove("live");$("mic").textContent="🎤 Diktieren";$("speechstatus").textContent="Diktat beendet.";base=$("content").value.trim()};
  $("mic").onclick=()=>{try{listening?rec.stop():rec.start()}catch(e){}};
 }else{$("speechsupport").textContent="Mikrofon nicht unterstützt";$("mic").disabled=true;$("speechstatus").textContent="Dieser Browser unterstützt die eingebaute Spracherkennung nicht."}
-$("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=render;$("filter").onchange=render;
+$("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=render;$("filter").onchange=()=>{activeCategory=$("filter").value||"__all__";render();};
 $("export").onclick=()=>{const b=new Blob([JSON.stringify({app:"Meine Wissenszentrale",version:"0.3.0",entries},null,2)],{type:"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="wissenszentrale-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(u)};
 $("import").onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.entries))throw 0;entries=confirm("OK = vorhandene Daten ersetzen.\nAbbrechen = zusätzlich übernehmen.")?d.entries:[...entries,...d.entries];saveStore();render();alert("Backup importiert.")}catch(x){alert("Backup konnte nicht gelesen werden.")}e.target.value=""};
 if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js").catch(()=>{}));
