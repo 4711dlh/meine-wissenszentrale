@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Meine Wissenszentrale v0.3.02</title>
+<title>Meine Wissenszentrale v0.3.03</title>
 <style>
 :root{--bg:#0f172a;--p:#111827;--p2:#1f2937;--t:#f8fafc;--m:#94a3b8;--a:#38bdf8;--g:#22c55e;--r:#ef4444;--b:rgba(255,255,255,.09)}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1120,var(--bg));color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
@@ -23,7 +23,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <body>
 <main class="app">
 <section class="card">
-<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.02</span></div>
+<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.03</span></div>
 <div class="status"><span class="pill" id="online">…</span><span class="pill">Lokale Speicherung</span><span class="pill" id="speechsupport">Mikrofon wird geprüft …</span></div>
 <div class="stats"><div class="stat"><strong id="all">0</strong><span>Einträge</span></div><div class="stat"><strong id="fav">0</strong><span>Favoriten</span></div><div class="stat"><strong id="catcount">0</strong><span>Kategorien</span></div></div>
 </section>
@@ -33,6 +33,10 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <select id="filter"><option value="">Alle Kategorien</option></select>
 </div>
 <div class="hint">Die Suche toleriert Leerzeichen, Bindestriche, Groß-/Kleinschreibung und kleine Tippfehler. Bei „Alle Kategorien“ wird ohne Kategorienfilter über den gesamten Datenbestand gesucht.</div>
+<div class="card" style="padding:12px;margin-top:10px">
+  <strong>Diagnose v0.3.03</strong>
+  <div class="hint" id="diag">Warte auf Sucheingabe …</div>
+</div>
 
 <section class="grid">
 <section class="card" id="formcard">
@@ -101,12 +105,16 @@ function renderEntries(){
  const q=$("search").value.trim();
 
  // 1. Suche läuft IMMER zuerst über den gesamten Datenbestand
+ const beforeSearchCount=entries.length;
  let list=entries.filter(e=>fuzzy(q,e));
+ const afterSearchCount=list.length;
 
  // 2. Kategorie wird danach separat angewendet
+ const categoryBefore=activeCategory;
  if(activeCategory!=="__all__"){
    list=list.filter(e=>String(e.category||"")===activeCategory);
  }
+ const afterCategoryCount=list.length;
 
  // 3. Favoritenfilter separat
  if(favOnly){
@@ -114,6 +122,13 @@ function renderEntries(){
  }
 
  list.sort((a,b)=>b.updatedAt-a.updatedAt);
+
+ $("diag").textContent =
+   "Suche: " + (q||"(leer)") +
+   " | Kategorie intern: " + activeCategory +
+   " | Datensätze gesamt: " + beforeSearchCount +
+   " | Treffer nach Fuzzy: " + afterSearchCount +
+   " | Treffer nach Kategorie: " + afterCategoryCount;
 
  $("all").textContent=entries.length;
  $("fav").textContent=entries.filter(e=>e.favorite).length;
