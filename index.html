@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Meine Wissenszentrale v0.3.1</title>
+<title>Meine Wissenszentrale v0.3.02</title>
 <style>
 :root{--bg:#0f172a;--p:#111827;--p2:#1f2937;--t:#f8fafc;--m:#94a3b8;--a:#38bdf8;--g:#22c55e;--r:#ef4444;--b:rgba(255,255,255,.09)}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1120,var(--bg));color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
@@ -23,7 +23,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <body>
 <main class="app">
 <section class="card">
-<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.1</span></div>
+<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.02</span></div>
 <div class="status"><span class="pill" id="online">…</span><span class="pill">Lokale Speicherung</span><span class="pill" id="speechsupport">Mikrofon wird geprüft …</span></div>
 <div class="stats"><div class="stat"><strong id="all">0</strong><span>Einträge</span></div><div class="stat"><strong id="fav">0</strong><span>Favoriten</span></div><div class="stat"><strong id="catcount">0</strong><span>Kategorien</span></div></div>
 </section>
@@ -32,7 +32,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <input id="search" type="search" placeholder="Wissen durchsuchen …">
 <select id="filter"><option value="">Alle Kategorien</option></select>
 </div>
-<div class="hint">Die Suche toleriert Leerzeichen, Bindestriche, Groß-/Kleinschreibung und kleine Tippfehler. Alle Kategorien werden gemeinsam durchsucht.</div>
+<div class="hint">Die Suche toleriert Leerzeichen, Bindestriche, Groß-/Kleinschreibung und kleine Tippfehler. Bei „Alle Kategorien“ wird ohne Kategorienfilter über den gesamten Datenbestand gesucht.</div>
 
 <section class="grid">
 <section class="card" id="formcard">
@@ -81,34 +81,59 @@ function fuzzy(q,e){
 function saveStore(){localStorage.setItem(STORE_KEY,JSON.stringify(entries))}
 function cats(){return [...new Set(entries.map(e=>e.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b))}
 let activeCategory="__all__";
-function refreshCats(){
- const c=cats();
- $("filter").innerHTML='<option value="__all__">Alle Kategorien</option>'+c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
- $("filter").value=c.includes(activeCategory)?activeCategory:"__all__";
- if($("filter").value==="__all__") activeCategory="__all__";
- $("catlist").innerHTML=c.map(x=>`<option value="${esc(x)}"></option>`).join("");
- $("catcount").textContent=c.length;
+let knownCategories=[];
+
+function rebuildCategoryControls(){
+ knownCategories=cats();
+
+ const previous=activeCategory;
+ $("filter").innerHTML='<option value="__all__">Alle Kategorien</option>'+
+   knownCategories.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
+
+ activeCategory = knownCategories.includes(previous) ? previous : "__all__";
+ $("filter").value=activeCategory;
+
+ $("catlist").innerHTML=knownCategories.map(x=>`<option value="${esc(x)}"></option>`).join("");
+ $("catcount").textContent=knownCategories.length;
 }
-function categoryMatches(e){
- return activeCategory==="__all__" || String(e.category||"")===activeCategory;
-}
-function render(){
+
+function renderEntries(){
  const q=$("search").value.trim();
- const list=entries.filter(e=>fuzzy(q,e)&&categoryMatches(e)&&(!favOnly||e.favorite)).sort((a,b)=>b.updatedAt-a.updatedAt);
- $("all").textContent=entries.length;$("fav").textContent=entries.filter(e=>e.favorite).length;
+
+ // 1. Suche läuft IMMER zuerst über den gesamten Datenbestand
+ let list=entries.filter(e=>fuzzy(q,e));
+
+ // 2. Kategorie wird danach separat angewendet
+ if(activeCategory!=="__all__"){
+   list=list.filter(e=>String(e.category||"")===activeCategory);
+ }
+
+ // 3. Favoritenfilter separat
+ if(favOnly){
+   list=list.filter(e=>e.favorite);
+ }
+
+ list.sort((a,b)=>b.updatedAt-a.updatedAt);
+
+ $("all").textContent=entries.length;
+ $("fav").textContent=entries.filter(e=>e.favorite).length;
  $("entries").innerHTML=list.length?list.map(e=>`<article class="entry"><h3>${esc(e.title||"Ohne Titel")}</h3><span class="badge">${esc(e.category||"Ohne Kategorie")}</span>${e.content?`<p>${esc(e.content)}</p>`:""}${e.link?`<p><a href="${esc(e.link)}" target="_blank">Quelle öffnen</a></p>`:""}${(e.tags||[]).length?`<div class="tags">${e.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}<div class="meta">${esc(e.source||"")} · ${new Date(e.updatedAt).toLocaleDateString("de-DE")}</div><div class="actions"><button class="secondary" onclick="editEntry('${e.id}')">Bearbeiten</button><button class="secondary" onclick="toggleFav('${e.id}')">${e.favorite?"★ entfernen":"☆ Favorit"}</button><button class="danger" onclick="delEntry('${e.id}')">Löschen</button></div></article>`).join(""):'<p class="hint">Noch nichts Passendes gefunden.</p>';
- refreshCats();
+}
+
+function render(){
+ rebuildCategoryControls();
+ renderEntries();
 }
 function resetForm(){["id","title","category","link","content","tags"].forEach(x=>$(x).value="");$("source").value="Eigene Notiz";$("save").textContent="Speichern";$("speechstatus").textContent=""}
 function saveEntry(){
  if(!$("title").value.trim()&&!$("content").value.trim()){alert("Bitte Titel oder Information eintragen.");return}
  const id=$("id").value,old=id?entries.find(e=>e.id===id):null;
  const e={id:id||(crypto.randomUUID?crypto.randomUUID():String(Date.now())),title:$("title").value.trim(),category:$("category").value.trim(),source:$("source").value,link:$("link").value.trim(),content:$("content").value.trim(),tags:$("tags").value.split(",").map(x=>x.trim()).filter(Boolean),favorite:old?.favorite||false,createdAt:old?.createdAt||Date.now(),updatedAt:Date.now()};
- entries=old?entries.map(x=>x.id===id?e:x):[...entries,e];saveStore();resetForm();render();
+ entries=old?entries.map(x=>x.id===id?e:x):[...entries,e];saveStore();resetForm();rebuildCategoryControls();renderEntries();
 }
 window.editEntry=id=>{const e=entries.find(x=>x.id===id);if(!e)return;$("id").value=e.id;$("title").value=e.title||"";$("category").value=e.category||"";$("source").value=e.source||"Eigene Notiz";$("link").value=e.link||"";$("content").value=e.content||"";$("tags").value=(e.tags||[]).join(", ");$("save").textContent="Änderungen speichern";$("formcard").scrollIntoView({behavior:"smooth"})}
-window.toggleFav=id=>{entries=entries.map(e=>e.id===id?{...e,favorite:!e.favorite,updatedAt:Date.now()}:e);saveStore();render()}
-window.delEntry=id=>{if(confirm("Diesen Eintrag wirklich löschen?")){entries=entries.filter(e=>e.id!==id);saveStore();render()}}
+window.toggleFav=id=>{entries=entries.map(e=>e.id===id?{...e,favorite:!e.favorite,updatedAt:Date.now()}:e);saveStore();rebuildCategoryControls();renderEntries()}
+window.delEntry=id=>{if(confirm("Diesen Eintrag wirklich löschen?")){entries=entries.filter(e=>e.id!==id);saveStore();rebuildCategoryControls();renderEntries()}}
 $("online").textContent=navigator.onLine?"Online":"Offline";
 window.addEventListener("online",()=>$("online").textContent="Online");window.addEventListener("offline",()=>$("online").textContent="Offline");
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,listening=false,base="";
@@ -120,9 +145,9 @@ if(SR){
  rec.onend=()=>{listening=false;$("mic").classList.remove("live");$("mic").textContent="🎤 Diktieren";$("speechstatus").textContent="Diktat beendet.";base=$("content").value.trim()};
  $("mic").onclick=()=>{try{listening?rec.stop():rec.start()}catch(e){}};
 }else{$("speechsupport").textContent="Mikrofon nicht unterstützt";$("mic").disabled=true;$("speechstatus").textContent="Dieser Browser unterstützt die eingebaute Spracherkennung nicht."}
-$("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=render;$("filter").onchange=()=>{activeCategory=$("filter").value||"__all__";render();};
+$("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=renderEntries;$("filter").onchange=()=>{activeCategory=$("filter").value||"__all__";renderEntries();};
 $("export").onclick=()=>{const b=new Blob([JSON.stringify({app:"Meine Wissenszentrale",version:"0.3.0",entries},null,2)],{type:"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="wissenszentrale-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(u)};
-$("import").onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.entries))throw 0;entries=confirm("OK = vorhandene Daten ersetzen.\nAbbrechen = zusätzlich übernehmen.")?d.entries:[...entries,...d.entries];saveStore();render();alert("Backup importiert.")}catch(x){alert("Backup konnte nicht gelesen werden.")}e.target.value=""};
+$("import").onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.entries))throw 0;entries=confirm("OK = vorhandene Daten ersetzen.\nAbbrechen = zusätzlich übernehmen.")?d.entries:[...entries,...d.entries];saveStore();rebuildCategoryControls();renderEntries();alert("Backup importiert.")}catch(x){alert("Backup konnte nicht gelesen werden.")}e.target.value=""};
 if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js").catch(()=>{}));
 render();
 </script>
