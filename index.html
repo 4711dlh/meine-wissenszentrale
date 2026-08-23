@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Meine Wissenszentrale v0.3.06</title>
+<title>Meine Wissenszentrale v0.4.0-1</title>
 <style>
 :root{--bg:#0f172a;--p:#111827;--p2:#1f2937;--t:#f8fafc;--m:#94a3b8;--a:#38bdf8;--g:#22c55e;--r:#ef4444;--b:rgba(255,255,255,.09)}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1120,var(--bg));color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
@@ -23,7 +23,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <body>
 <main class="app">
 <section class="card">
-<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.3.06</span></div>
+<div class="herohead"><div><h1>Meine Wissenszentrale</h1><p>Private Wissenssammlung mit unscharfer Suche und Spracheingabe.</p></div><span class="ver">v0.4.0-1</span></div>
 <div class="status"><span class="pill" id="online">…</span><span class="pill">Lokale Speicherung</span><span class="pill" id="speechsupport">Mikrofon wird geprüft …</span></div>
 <div class="stats"><div class="stat"><strong id="all">0</strong><span>Einträge</span></div><div class="stat"><strong id="fav">0</strong><span>Favoriten</span></div><div class="stat"><strong id="catcount">0</strong><span>Kategorien</span></div></div>
 </section>
@@ -32,7 +32,7 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 <input id="search" type="search" placeholder="Wissen durchsuchen …">
 <select id="filter"><option value="">Alle Kategorien</option></select>
 </div>
-<div class="hint">Suche v0.3.06: Leerzeichen und Bindestriche werden ignoriert; kleine Tippfehler sind erlaubt, Ziffern müssen exakt passen.</div>
+<div class="hint">Suche v0.4.0-1: Leerzeichen und Bindestriche werden ignoriert; kleine Tippfehler sind erlaubt, Ziffern müssen exakt passen.</div>
 
 
 
@@ -54,6 +54,11 @@ button,.filelabel{border:0;border-radius:13px;padding:11px 14px;font-weight:700;
 </section>
 
 <section class="card"><h2>Gespeichertes Wissen</h2><div class="entries" id="entries"></div></section>
+<section class="card">
+<h2>Kategorien verwalten</h2>
+<p class="hint">Kategorien umbenennen oder sicher löschen. Wissenseinträge werden dabei niemals automatisch gelöscht.</p>
+<div class="entries" id="categoryManager"></div>
+</section>
 <section class="card"><h2>Datensicherung</h2><div class="actions"><button class="good" id="export">Backup exportieren</button><label class="filelabel" for="import">Backup importieren</label><input class="hidden" id="import" type="file" accept=".json,application/json"></div></section>
 </section>
 </main>
@@ -117,12 +122,50 @@ function render(){
  $("entries").innerHTML=list.length?list.map(e=>`<article class="entry"><h3>${esc(e.title||"Ohne Titel")}</h3><span class="badge">${esc(e.category||"Ohne Kategorie")}</span>${e.content?`<p>${esc(e.content)}</p>`:""}${e.link?`<p><a href="${esc(e.link)}" target="_blank">Quelle öffnen</a></p>`:""}${(e.tags||[]).length?`<div class="tags">${e.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}<div class="meta">${esc(e.source||"")} · ${new Date(e.updatedAt).toLocaleDateString("de-DE")}</div><div class="actions"><button class="secondary" onclick="editEntry('${e.id}')">Bearbeiten</button><button class="secondary" onclick="toggleFav('${e.id}')">${e.favorite?"★ entfernen":"☆ Favorit"}</button><button class="danger" onclick="delEntry('${e.id}')">Löschen</button></div></article>`).join(""):'<p class="hint">Noch nichts Passendes gefunden.</p>';
  refreshCats();
 }
+function renderCategoryManager(){
+ const box=$("categoryManager"); if(!box)return;
+ const c=cats();
+ box.innerHTML=c.length?c.map(cat=>{
+   const count=entries.filter(e=>e.category===cat).length;
+   return `<div class="entry"><h3>${esc(cat)}</h3><div class="meta">${count} Eintrag${count===1?"":"e"}</div>
+   <div class="actions"><button class="secondary" onclick="renameCategory('${encodeURIComponent(cat)}')">Umbenennen</button>
+   <button class="danger" onclick="deleteCategory('${encodeURIComponent(cat)}')">Löschen</button></div></div>`;
+ }).join(""):'<p class="hint">Noch keine Kategorien vorhanden.</p>';
+}
+window.renameCategory=encoded=>{
+ const oldName=decodeURIComponent(encoded);
+ const n=prompt('Kategorie „'+oldName+'“ umbenennen in:',oldName);
+ if(n===null)return; const clean=n.trim();
+ if(!clean||clean===oldName)return;
+ if(cats().includes(clean)){alert('Diese Kategorie existiert bereits.');return;}
+ entries=entries.map(e=>e.category===oldName?{...e,category:clean,updatedAt:Date.now()}:e);
+ saveStore(); render(); renderCategoryManager();
+};
+window.deleteCategory=encoded=>{
+ const oldName=decodeURIComponent(encoded);
+ const affected=entries.filter(e=>e.category===oldName);
+ if(!affected.length)return;
+ const choice=prompt('Kategorie „'+oldName+'“ enthält '+affected.length+' Eintrag/Einträge.\n\n1 = Kategorie entfernen, Einträge behalten\n2 = Einträge anderer Kategorie zuordnen\nAbbrechen = nichts ändern','1');
+ if(choice===null)return;
+ if(choice.trim()==='1'){
+   if(!confirm('Kategorie entfernen? Alle Einträge bleiben erhalten und haben danach keine Kategorie.'))return;
+   entries=entries.map(e=>e.category===oldName?{...e,category:"",updatedAt:Date.now()}:e);
+ } else if(choice.trim()==='2'){
+   const target=prompt('Name der Zielkategorie eingeben:');
+   if(target===null)return; const clean=target.trim();
+   if(!clean||clean===oldName){alert('Bitte eine andere Zielkategorie angeben.');return;}
+   entries=entries.map(e=>e.category===oldName?{...e,category:clean,updatedAt:Date.now()}:e);
+ } else {alert('Ungültige Auswahl. Es wurde nichts geändert.');return;}
+ saveStore(); render(); renderCategoryManager();
+ alert('Kategorie entfernt. Kein Wissenseintrag wurde gelöscht.');
+};
+
 function resetForm(){["id","title","category","link","content","tags"].forEach(x=>$(x).value="");$("source").value="Eigene Notiz";$("save").textContent="Speichern";$("speechstatus").textContent=""}
 function saveEntry(){
  if(!$("title").value.trim()&&!$("content").value.trim()){alert("Bitte Titel oder Information eintragen.");return}
  const id=$("id").value,old=id?entries.find(e=>e.id===id):null;
  const e={id:id||(crypto.randomUUID?crypto.randomUUID():String(Date.now())),title:$("title").value.trim(),category:$("category").value.trim(),source:$("source").value,link:$("link").value.trim(),content:$("content").value.trim(),tags:$("tags").value.split(",").map(x=>x.trim()).filter(Boolean),favorite:old?.favorite||false,createdAt:old?.createdAt||Date.now(),updatedAt:Date.now()};
- entries=old?entries.map(x=>x.id===id?e:x):[...entries,e];saveStore();resetForm();render();
+ entries=old?entries.map(x=>x.id===id?e:x):[...entries,e];saveStore();resetForm();render();renderCategoryManager();
 }
 window.editEntry=id=>{const e=entries.find(x=>x.id===id);if(!e)return;$("id").value=e.id;$("title").value=e.title||"";$("category").value=e.category||"";$("source").value=e.source||"Eigene Notiz";$("link").value=e.link||"";$("content").value=e.content||"";$("tags").value=(e.tags||[]).join(", ");$("save").textContent="Änderungen speichern";$("formcard").scrollIntoView({behavior:"smooth"})}
 window.toggleFav=id=>{entries=entries.map(e=>e.id===id?{...e,favorite:!e.favorite,updatedAt:Date.now()}:e);saveStore();render()}
@@ -142,7 +185,7 @@ $("save").onclick=saveEntry;$("reset").onclick=resetForm;$("search").oninput=ren
 $("export").onclick=()=>{const b=new Blob([JSON.stringify({app:"Meine Wissenszentrale",version:"0.3.0",entries},null,2)],{type:"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="wissenszentrale-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(u)};
 $("import").onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.entries))throw 0;entries=confirm("OK = vorhandene Daten ersetzen.\nAbbrechen = zusätzlich übernehmen.")?d.entries:[...entries,...d.entries];saveStore();render();alert("Backup importiert.")}catch(x){alert("Backup konnte nicht gelesen werden.")}e.target.value=""};
 if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js").catch(()=>{}));
-render();
+render();renderCategoryManager();
 </script>
 </body>
 </html>
